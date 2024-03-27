@@ -23,6 +23,17 @@ import pprint
 import secrets
 
 
+_FREEZE =  {
+    'metadata': {
+        'trusted': True,
+        'editable': False,
+        'deletable': False
+    }
+}
+
+_DELETE =  {'delete': True}
+
+
 class _PrintOutput(object):
     def __init__(self, txt: str):
         self.txt = txt
@@ -33,6 +44,17 @@ class _PrintOutput(object):
             p.text(f'{line}')
             if i != len(lines) - 1:
                 p.text('\n')
+
+
+class _PrintCellAttribute(object):
+    def __init__(self, attr: dict):
+        self.attr = attr
+
+    def _repr_pretty_(self, p: Any, c: bool) -> str:
+        p.text('[gambi]')
+        
+    def _repr_json_(self) -> dict:
+        return self.attr
 
 
 def new_print(*args, **kwargs):
@@ -50,6 +72,14 @@ def random_key(n: int = 6) -> str:
 
 def has_method(o: Any, name: str) -> bool:
     return callable(getattr(o, name, None))
+
+
+def freeze_cell():
+    return _PrintCellAttribute(_FREEZE)
+
+
+def delete_cell():
+    return _PrintCellAttribute(_DELETE)
 
 
 def to_str(o: Any, max_n: int = None) -> str:
@@ -83,7 +113,7 @@ class GambiTeacher(object):
         self.test_cases = {}
         self.order = []
         self.types = []
-        self.repr = 0
+        self.repr_history = 0
 
     def create_test_case(
         self, variable: Any, key: str = None
@@ -98,7 +128,8 @@ class GambiTeacher(object):
             )
         self.test_cases[key] = copy.deepcopy(variable)
         self.order.append(key)
-        self.repr += 1
+        self.types.append(str(type(variable)))
+        self.repr_history += 1
         return self
 
     def create_vpl(
@@ -113,6 +144,7 @@ class GambiTeacher(object):
         with open(questions, 'w') as questions_file:
             q = {}
             q['order'] = self.order
+            q['type'] = self.types
             json.dump(q, questions_file)
 
         with open(cases, 'w') as cases_file:
@@ -121,17 +153,29 @@ class GambiTeacher(object):
                 print(f'Case = {key}', file=cases_file)
                 print('Input =', file=cases_file)
                 print(f'Output = {val}', file=cases_file)
-        self.repr = 0
+        self.repr_history = 0
         return self
 
     def _repr_pretty_(self, p: Any, c: bool) -> str:
-        if self.order and self.repr:
-            for key in self.order[-self.repr:]:
+        if self.repr_history > 0:
+            n = self.repr_history
+            p.text(f'[🤙] Created {n} new test case(s)\n')
+        else:
+            n = len(self.test_cases)
+            p.text(f'[🤙] There are {n} tests in this execise\n')
+
+        if self.order:
+            p.text(f'[🤙] They are as follows\n')
+            cases = self.order[-self.repr_history:]
+            types = self.types[-self.repr_history:]
+            for key, type_ in zip(cases, types):
                 val = to_str(self.test_cases[key], 50)
+                p.text(f'[🤙] Test {key} expects {type_} as response\n')
+                p.text('[🤙] Test summary:\n')
                 p.text(f'Case = {key}\n')
                 p.text('Input =\n')
-                p.text(f'Output = {val}\n')
-        self.repr = 0
+                p.text(f'Output = {val}\n\n')
+        self.repr_history = 0
 
 
 class GambiStudent(object):
