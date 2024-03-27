@@ -23,10 +23,24 @@ import pprint
 import secrets
 
 
-def new_print(*args):
+class _PrintOutput(object):
+    def __init__(self, txt: str):
+        self.txt = txt
+    def _repr_pretty_(self, p: Any, c: bool) -> str:
+        lines = self.txt.splitlines(keepends=False)
+        for i in range(len(lines)):
+            line = lines[i]
+            p.text(f'{line}')
+            if i != len(lines) - 1:
+                p.text('\n')
+
+
+def new_print(*args, **kwargs):
     buffer = io.StringIO()
-    print(*args, file=buffer)
-    return buffer.getvalue()
+    if 'file' in kwargs:
+        del kwargs['file']
+    print(*args, file=buffer, **kwargs)
+    return _PrintOutput(buffer.getvalue())
 
 
 def random_key(n: int = 6) -> str:
@@ -68,6 +82,7 @@ class GambiTeacher(object):
     def __init__(self):
         self.test_cases = {}
         self.order = []
+        self.types = []
         self.repr = 0
 
     def create_test_case(
