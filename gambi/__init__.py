@@ -23,7 +23,7 @@ import pprint
 import secrets
 
 
-_FREEZE =  {
+_FREEZE = {
     'metadata': {
         'trusted': True,
         'editable': False,
@@ -31,12 +31,13 @@ _FREEZE =  {
     }
 }
 
-_DELETE =  {'delete': True}
+_DELETE = {'delete': True}
 
 
 class _PrintOutput(object):
     def __init__(self, txt: str):
         self.txt = txt
+
     def _repr_pretty_(self, p: Any, c: bool) -> str:
         lines = self.txt.splitlines(keepends=False)
         for i in range(len(lines)):
@@ -112,7 +113,6 @@ class GambiTeacher(object):
     def __init__(self):
         self.test_cases = {}
         self.order = []
-        self.types = []
         self.repr_history = 0
 
     def create_test_case(
@@ -128,7 +128,6 @@ class GambiTeacher(object):
             )
         self.test_cases[key] = copy.deepcopy(variable)
         self.order.append(key)
-        self.types.append(str(type(variable)))
         self.repr_history += 1
         return self
 
@@ -144,7 +143,6 @@ class GambiTeacher(object):
         with open(questions, 'w') as questions_file:
             q = {}
             q['order'] = self.order
-            q['type'] = self.types
             json.dump(q, questions_file)
 
         with open(cases, 'w') as cases_file:
@@ -165,12 +163,10 @@ class GambiTeacher(object):
             p.text(f'[🤙] There are {n} tests in this execise\n')
 
         if self.order:
-            p.text(f'[🤙] They are as follows\n')
+            p.text('[🤙] They are as follows\n')
             cases = self.order[-self.repr_history:]
-            types = self.types[-self.repr_history:]
-            for key, type_ in zip(cases, types):
+            for key in cases:
                 val = to_str(self.test_cases[key], 50)
-                p.text(f'[🤙] Test {key} expects {type_} as response\n')
                 p.text('[🤙] Test summary:\n')
                 p.text(f'Case = {key}\n')
                 p.text('Input =\n')
@@ -187,25 +183,28 @@ class GambiStudent(object):
         self.test_cases = {}
         with open(questions, 'r') as questions_file:
             order_json = json.load(questions_file)
-            self.order = order_json['order']
-        self.repr = None
+            self.order = set(order_json['order'])
+        self.repr_messages = []
 
     def register_answer(
         self, variable: Any, key: str
     ) -> Self:
+        if key not in self.order:
+            raise KeyError(f'{key} is not a question!')
         if key in self.test_cases:
-            self.repr = f'[‼️] Answer to {key} was overwritten!'
+            msg = f'[‼️] Answer to {key} was overwritten!'
         else:
-            self.repr = f'[🤙] Answer to {key} was stored'
+            msg = f'[🤙] Answer to {key} was stored'
 
         self.test_cases[key] = copy.deepcopy(variable)
+        self.repr_messages.append(msg)
         return self
 
     def _repr_pretty_(self, p: Any, c: bool) -> str:
-        if self.repr is not None:
-            msg = self.repr
-            p.text(f'{msg}\n\n')
-            self.repr = None
+        if self.repr_messages:
+            for msg in self.repr_messages:
+                p.text(f'{msg}\n\n')
+            self.repr_messages = []
         nq = len(self.order)
         na = len(self.test_cases)
         p.text(f'This activity has {nq} questions.\n')
@@ -220,9 +219,74 @@ class GambiStudent(object):
             p.text(f'[‼️ ‼️ ‼️] Missing: {missing}\n')
 
     def evaluate(self):
-        print = builtins.print
         for key in self.order:
             if key in self.test_cases:
-                print(to_str(self.test_cases[key]))
+                builtins.print(to_str(self.test_cases[key]))
             else:
-                print('')
+                builtins.print('')
+
+
+def main(notebook: dict):
+    new_notebook = copy.deepcopy(notebook)
+    cells = notebook['cells']
+    new_cells = []
+    for cell in cells:
+        new_cell = copy.deepcopy(cell)
+        if (
+            'cell_type' not in cell or
+            'outputs' not in cell or
+            cell['cell_type'] != 'code'
+        ):
+            new_cells.append(new_cell)
+        else:
+            output = new_cell['outputs']
+            if (
+                not output or
+                'data' not in output[0]
+            ):
+                new_cells.append(new_cell)
+            else:
+                data = output[0]['data']
+                # builtins.print(data)
+                if (
+                    'text/plain' in data and
+                    data['text/plain'] == ['[gambi]']
+                    and 'application/json' in data
+                ):
+                    info = data['application/json']
+                    if info == _DELETE:
+                        continue
+                    if info == _FREEZE:
+                        new_cell['metadata'] = _FREEZE['metadata']
+                new_cell['outputs'] = []
+                new_cells.append(new_cell)
+    new_notebook['cells'] = new_cells
+    builtins.print(json.dumps(new_notebook))
+
+
+if __name__ == '__main__':
+    import sys
+
+    program = sys.argv[0]
+    err = sys.stderr
+
+    if len(sys.argv) == 1:
+        builtins.print(f'Usage {program} jupyter-notebook-path', file=err)
+        sys.exit(1)
+
+    notebook_path = Path(sys.argv[1])
+    if not notebook_path.exists():
+        builtins.print(f'{notebook_path} does not exist!', file=err)
+        sys.exit(1)
+
+    if notebook_path.is_dir():
+        builtins.print(f'{notebook_path} is a directory!', file=err)
+        sys.exit(1)
+
+    if not notebook_path.suffix or notebook_path.suffix != '.ipynb':
+        builtins.print(f'{notebook_path} not a notebook file!', file=err)
+        sys.exit(1)
+
+    with open(notebook_path) as json_file:
+        notebook = json.load(json_file)
+        main(notebook)
