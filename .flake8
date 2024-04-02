@@ -1,0 +1,9 @@
+[flake8]
+ignore =
+    N803
+    N806
+    N802
+    W504
+max-line-length = 59
+max-complexity = 21
+docstring-convention=numpy

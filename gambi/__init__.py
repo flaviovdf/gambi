@@ -4,8 +4,18 @@
 Gambi is a Python autograder created for Moodle's Virtual
 Programming Laboratory (VPL). VPL follows a input output
 style (i.e., akin to coding competitions) test cases.
+
 Gambi will automatically create such test cases based on
-a Jupyter notebook
+a Jupyter notebook. Gambi also provides tools to mark
+notebook cells for deletion and/or as read-only.
+
+This is a single file module that does not require anything
+besides the standard python library.
+
+VPL performs grading based on the standard output. Thus,
+we need to capture the print function to work correctly.
+Thus, **Gambi is a HACK** In order to use it correctly,
+even the print function will be overwritten. Use it wisely.
 '''
 
 
@@ -53,7 +63,7 @@ class _PrintCellAttribute(object):
 
     def _repr_pretty_(self, p: Any, c: bool) -> str:
         p.text('[gambi]')
-        
+
     def _repr_json_(self) -> dict:
         return self.attr
 
@@ -64,6 +74,10 @@ def new_print(*args, **kwargs):
         del kwargs['file']
     print(*args, file=buffer, **kwargs)
     return _PrintOutput(buffer.getvalue())
+
+
+def original_print(*args, **kwargs):
+    return builtins.print(*args, **kwargs)
 
 
 def random_key(n: int = 6) -> str:
@@ -160,7 +174,7 @@ class GambiTeacher(object):
             p.text(f'[🤙] Created {n} new test case(s)\n')
         else:
             n = len(self.test_cases)
-            p.text(f'[🤙] There are {n} tests in this execise\n')
+            p.text(f'[🤙] There are {n} tests case(s)\n')
 
         if self.order:
             p.text('[🤙] They are as follows\n')
@@ -221,12 +235,14 @@ class GambiStudent(object):
     def evaluate(self):
         for key in self.order:
             if key in self.test_cases:
-                builtins.print(to_str(self.test_cases[key]))
+                builtins.print(
+                    to_str(self.test_cases[key])
+                )
             else:
-                builtins.print('')
+                builtins.print('[‼️ ‼️ ‼️] No Answer!')
 
 
-def main(notebook: dict):
+def convert_notebook(notebook: dict) -> dict:
     new_notebook = copy.deepcopy(notebook)
     cells = notebook['cells']
     new_cells = []
@@ -247,21 +263,21 @@ def main(notebook: dict):
                 new_cells.append(new_cell)
             else:
                 data = output[0]['data']
-                # builtins.print(data)
                 if (
                     'text/plain' in data and
-                    data['text/plain'] == ['[gambi]']
-                    and 'application/json' in data
+                    data['text/plain'] == ['[gambi]'] and
+                    'application/json' in data
                 ):
                     info = data['application/json']
                     if info == _DELETE:
                         continue
                     if info == _FREEZE:
-                        new_cell['metadata'] = _FREEZE['metadata']
+                        key = 'metadata'
+                        new_cell[key] = info[key]
                 new_cell['outputs'] = []
                 new_cells.append(new_cell)
     new_notebook['cells'] = new_cells
-    builtins.print(json.dumps(new_notebook))
+    return new_notebook
 
 
 if __name__ == '__main__':
@@ -271,22 +287,37 @@ if __name__ == '__main__':
     err = sys.stderr
 
     if len(sys.argv) == 1:
-        builtins.print(f'Usage {program} jupyter-notebook-path', file=err)
+        builtins.print(
+            f'Usage {program} jupyter-notebook-path',
+            file=err
+        )
         sys.exit(1)
 
     notebook_path = Path(sys.argv[1])
     if not notebook_path.exists():
-        builtins.print(f'{notebook_path} does not exist!', file=err)
+        builtins.print(
+            f'{notebook_path} does not exist!',
+            file=err
+        )
         sys.exit(1)
 
     if notebook_path.is_dir():
-        builtins.print(f'{notebook_path} is a directory!', file=err)
+        builtins.print(
+            f'{notebook_path} is a directory!',
+            file=err
+        )
         sys.exit(1)
 
-    if not notebook_path.suffix or notebook_path.suffix != '.ipynb':
-        builtins.print(f'{notebook_path} not a notebook file!', file=err)
+    if (
+        not notebook_path.suffix or
+        notebook_path.suffix != '.ipynb'
+    ):
+        builtins.print(
+            f'{notebook_path} not a notebook file!',
+            file=err
+        )
         sys.exit(1)
 
     with open(notebook_path) as json_file:
         notebook = json.load(json_file)
-        main(notebook)
+        builtins.print(convert_notebook(notebook))
