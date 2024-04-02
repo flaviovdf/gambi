@@ -28,9 +28,9 @@ from pathlib import Path
 import builtins
 import copy
 import json
-import io
 import pprint
 import secrets
+import sys
 
 
 _FREEZE = {
@@ -42,19 +42,6 @@ _FREEZE = {
 }
 
 _DELETE = {'delete': True}
-
-
-class _PrintOutput(object):
-    def __init__(self, txt: str):
-        self.txt = txt
-
-    def _repr_pretty_(self, p: Any, c: bool) -> str:
-        lines = self.txt.splitlines(keepends=False)
-        for i in range(len(lines)):
-            line = lines[i]
-            p.text(f'{line}')
-            if i != len(lines) - 1:
-                p.text('\n')
 
 
 class _PrintCellAttribute(object):
@@ -69,11 +56,12 @@ class _PrintCellAttribute(object):
 
 
 def new_print(*args, **kwargs):
-    buffer = io.StringIO()
     if 'file' in kwargs:
-        del kwargs['file']
-    print(*args, file=buffer, **kwargs)
-    return _PrintOutput(buffer.getvalue())
+        if kwargs['file'] == sys.stdout:
+            raise AttributeError('Cannot print to std.out!')
+        print(*args, **kwargs)
+    else:
+        print(*args, **kwargs, file=sys.stderr)
 
 
 def original_print(*args, **kwargs):
@@ -127,6 +115,7 @@ class GambiTeacher(object):
     def __init__(self):
         self.test_cases = {}
         self.order = []
+        self.types = []
         self.repr_history = 0
 
     def create_test_case(
@@ -142,6 +131,9 @@ class GambiTeacher(object):
             )
         self.test_cases[key] = copy.deepcopy(variable)
         self.order.append(key)
+        self.types.append(
+            str(type(variable)).split("'")[1]
+        )
         self.repr_history += 1
         return self
 
@@ -157,6 +149,9 @@ class GambiTeacher(object):
         with open(questions, 'w') as questions_file:
             q = {}
             q['order'] = self.order
+            q['types'] = {}
+            for key, type_ in zip(self.order, self.types):
+                q['types'][key] = type_
             json.dump(q, questions_file)
 
         with open(cases, 'w') as cases_file:
@@ -179,9 +174,10 @@ class GambiTeacher(object):
         if self.order:
             p.text('[🤙] They are as follows\n')
             cases = self.order[-self.repr_history:]
-            for key in cases:
+            for key, type_ in zip(self.order, self.types):
                 val = to_str(self.test_cases[key], 50)
-                p.text('[🤙] Test summary:\n')
+                p.text(f'[🤙] {key} expects {type_}.\n')
+                p.text('[🤙] Summary in VPL:\n')
                 p.text(f'Case = {key}\n')
                 p.text('Input =\n')
                 p.text(f'Output = {val}\n\n')
@@ -196,8 +192,9 @@ class GambiStudent(object):
             raise IOError(f'{questions} does not exist!')
         self.test_cases = {}
         with open(questions, 'r') as questions_file:
-            order_json = json.load(questions_file)
-            self.order = set(order_json['order'])
+            qjson = json.load(questions_file)
+            self.order = qjson['order']
+            self.types = qjson['types']
         self.repr_messages = []
 
     def register_answer(
